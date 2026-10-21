@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#1e1e2e">
+  <title>BunnyFPS — Browser Performance Test</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Arial, sans-serif;
+      background: #1e1e2e;
+      color: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-width: 280px;
+      min-height: 100vh;
+      min-height: 100dvh;
+      margin: 0;
+      overflow: hidden;
+    }
+
+    #stage {
+      position: fixed;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    #ui-container {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 1;
+      max-width: calc(100vw - 32px);
+      padding: 14px 16px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      background: rgba(12, 12, 20, 0.82);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+      line-height: 1.5;
+    }
+
+    .stats p + p {
+      margin-top: 4px;
+    }
+
+    #fps-counter {
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+    }
+
+    .fps-good { color: #4eff7b; }
+    .fps-medium { color: #ffd166; }
+    .fps-bad { color: #ff5964; }
+
+    .controls {
+      position: fixed;
+      right: 12px;
+      bottom: max(24px, env(safe-area-inset-bottom));
+      left: 12px;
+      z-index: 1;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .controls button {
+      min-height: 48px;
+      padding: 12px 20px;
+      border: 0;
+      border-radius: 7px;
+      color: #ffffff;
+      font: inherit;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background-color 0.2s, transform 0.2s;
+    }
+
+    .controls button:hover {
+      transform: translateY(-2px);
+    }
+
+    .controls button:focus-visible {
+      outline: 3px solid #ffffff;
+      outline-offset: 3px;
+    }
+
+    .btn-add { background: #007bff; }
+    .btn-add:hover { background: #0056b3; }
+    .btn-reset { background: #dc3545; }
+    .btn-reset:hover { background: #a71d2a; }
+
+    @media (max-width: 420px) {
+      .controls {
+        gap: 8px;
+      }
+
+      .controls button {
+        flex: 1 1 calc(50% - 8px);
+        padding-inline: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="stage" aria-hidden="true"></canvas>
+
+  <section id="ui-container" aria-label="Performance statistics">
+    <div class="stats">
+      <p>FPS: <span id="fps-counter" class="fps-good">0</span></p>
+      <p>How many rabbits are on the screen: <span id="bunny-counter">0</span></p>
+    </div>
+  </section>
+
+  <nav class="controls" aria-label="Rabbit controls">
+    <button id="add-20-btn" class="btn-add" type="button">+20 Rabbits</button>
+    <button id="add-50-btn" class="btn-add" type="button">+50 Rabbits</button>
+    <button id="add-100-btn" class="btn-add" type="button">+100 Rabbits</button>
+    <button id="reset-btn" class="btn-reset" type="button">Reset</button>
+  </nav>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById("stage");
+      const context = canvas.getContext("2d", { alpha: false });
+      const fpsCounter = document.getElementById("fps-counter");
+      const bunnyCounter = document.getElementById("bunny-counter");
+      const rabbits = [];
+      const rabbitRadius = 10;
+      const backgroundColor = "#1e1e2e";
+      let width = 0;
+      let height = 0;
+      let pixelRatio = 1;
+      let previousFrameTime = 0;
+      let fpsWindowStart = 0;
+      let framesInWindow = 0;
+
+      function resizeCanvas() {
+        pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = Math.round(width * pixelRatio);
+        canvas.height = Math.round(height * pixelRatio);
+        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+
+        for (const rabbit of rabbits) {
+          rabbit.x = Math.max(rabbitRadius, Math.min(width - rabbitRadius, rabbit.x));
+          rabbit.y = Math.max(rabbitRadius, Math.min(height - rabbitRadius, rabbit.y));
+        }
+      }
+
+      function addRabbits(amount) {
+        for (let i = 0; i < amount; i += 1) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 45 + Math.random() * 90;
+          rabbits.push({
+            x: rabbitRadius + Math.random() * Math.max(0, width - rabbitRadius * 2),
+            y: rabbitRadius + Math.random() * Math.max(0, height - rabbitRadius * 2),
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            color: `hsl(${Math.floor(Math.random() * 360)} 75% 72%)`,
+          });
+        }
+
+        bunnyCounter.textContent = String(rabbits.length);
+      }
+
+      function drawRabbit(rabbit) {
+        context.save();
+        context.translate(rabbit.x, rabbit.y);
+        context.fillStyle = rabbit.color;
+
+        context.beginPath();
+        context.ellipse(-2, 3, 7, 5, 0, 0, Math.PI * 2);
+        context.ellipse(5, -2, 5, 5, 0, 0, Math.PI * 2);
+        context.ellipse(3, -10, 2, 7, -0.2, 0, Math.PI * 2);
+        context.ellipse(8, -9, 2, 6, 0.25, 0, Math.PI * 2);
+        context.fill();
+
+        context.fillStyle = "#292238";
+        context.beginPath();
+        context.arc(7, -3, 0.9, 0, Math.PI * 2);
+        context.fill();
+        context.restore();
+      }
+
+      function renderFrame(timestamp) {
+        if (previousFrameTime === 0) {
+          previousFrameTime = timestamp;
+          fpsWindowStart = timestamp;
+        }
+
+        const deltaTime = Math.min((timestamp - previousFrameTime) / 1000, 0.05);
+        previousFrameTime = timestamp;
+        framesInWindow += 1;
+
+        for (const rabbit of rabbits) {
+          rabbit.x += rabbit.vx * deltaTime;
+          rabbit.y += rabbit.vy * deltaTime;
+
+          if (rabbit.x < rabbitRadius || rabbit.x > width - rabbitRadius) {
+            rabbit.x = Math.max(rabbitRadius, Math.min(width - rabbitRadius, rabbit.x));
+            rabbit.vx *= -1;
+          }
+          if (rabbit.y < rabbitRadius || rabbit.y > height - rabbitRadius) {
+            rabbit.y = Math.max(rabbitRadius, Math.min(height - rabbitRadius, rabbit.y));
+            rabbit.vy *= -1;
+          }
+        }
+
+        context.fillStyle = backgroundColor;
+        context.fillRect(0, 0, width, height);
+        for (const rabbit of rabbits) {
+          drawRabbit(rabbit);
+        }
+
+        const elapsed = timestamp - fpsWindowStart;
+        if (elapsed >= 500) {
+          const fps = Math.round((framesInWindow * 1000) / elapsed);
+          fpsCounter.textContent = String(fps);
+          fpsCounter.className = fps >= 55 ? "fps-good" : fps >= 30 ? "fps-medium" : "fps-bad";
+          framesInWindow = 0;
+          fpsWindowStart = timestamp;
+        }
+
+        window.requestAnimationFrame(renderFrame);
+      }
+
+      document.getElementById("add-20-btn").addEventListener("click", () => addRabbits(20));
+      document.getElementById("add-50-btn").addEventListener("click", () => addRabbits(50));
+      document.getElementById("add-100-btn").addEventListener("click", () => addRabbits(100));
+      document.getElementById("reset-btn").addEventListener("click", () => {
+        rabbits.length = 0;
+        bunnyCounter.textContent = "0";
+      });
+      window.addEventListener("resize", resizeCanvas);
+
+      resizeCanvas();
+      window.requestAnimationFrame(renderFrame);
+    })();
+  </script>
+</body>
+</html>
